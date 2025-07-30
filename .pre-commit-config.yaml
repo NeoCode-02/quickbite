@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        name: "Ruff: Lint + Auto-fix"
+        args: [--fix, --exit-non-zero-on-fix]
+        types: [python]
+
+      - id: ruff-format
+        name: "Ruff: Format"
+        types: [python]
