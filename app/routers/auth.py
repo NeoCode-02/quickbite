@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
-from app.models import User
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
 from jose import JWTError
+from app.models import User
 from app.schemas.user import UserCreate
 from app.schemas.auth import UserLogin, Token
 from app.utils import (
@@ -17,16 +18,16 @@ from app.settings import FRONTEND_URL
 router = APIRouter()
 
 
-@router.post("/register/")
-async def register_user(register_data: UserCreate, db: db_dep) -> dict:
+@router.post("/register/", response_model=dict)
+def register_user(register_data: UserCreate, db: db_dep):
     existing_user = db.query(User).filter(User.email == register_data.email).first()
-
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
 
-    is_first_user = db.query(User).count() == 0
+    is_superuser = False
+    is_verified = False
 
-    if is_first_user:
+    if db.query(User).count() == 0:
         is_superuser = True
         is_verified = True
 
@@ -43,18 +44,19 @@ async def register_user(register_data: UserCreate, db: db_dep) -> dict:
     db.commit()
     db.refresh(user)
 
-    token = generate_confirmation_token(email=user.email)
-    send_email.delay(
-        to_email=user.email,
-        subject="Confirm your registration to Bookla",
-        body=f"Click to confirm: {FRONTEND_URL}/auth/confirm/{token}/",
-    )
+    if not is_verified:
+        token = generate_confirmation_token(email=user.email)
+        send_email.delay(
+            to_email=user.email,
+            subject="Confirm your registration",
+            body=f"Click to confirm: {FRONTEND_URL}/auth/confirm/{token}/",
+        )
 
-    return {"detail": f"Confirmation email sent to {user.email}."}
+    return {"detail": f"User registered. {'Confirmation email sent.' if not is_verified else 'Auto-confirmed.'}"}
 
 
-@router.post("/login/")
-async def login_user(login_data: UserLogin, db: db_dep) -> Token:
+@router.post("/login/", response_model=Token)
+def login_user(login_data: UserLogin, db: db_dep):
     user = db.query(User).filter(User.email == login_data.email).first()
 
     if not user or not verify_password(login_data.password, user.hashed_pw):
@@ -63,21 +65,29 @@ async def login_user(login_data: UserLogin, db: db_dep) -> Token:
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Account not confirmed")
 
-    payload = {"email": user.email, "is_superuser": user.is_superuser}
+    payload = {
+        "sub": user.email,
+        "role": user.role.value,
+        "is_superuser": user.is_superuser,
+    }
 
     access_token = create_access_token(data=payload)
     refresh_token = create_refresh_token(data=payload)
 
     return Token(
-        access_token=access_token, refresh_token=refresh_token, token_type="bearer"
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer"
     )
 
 
-@router.get("/confirm/{token}/")
-async def confirm_email(token: str, db: db_dep) -> dict:
+@router.get("/confirm/{token}/", response_model=dict)
+def confirm_email(token: str, db: db_dep):
     try:
         payload = decode_token(token)
         email = payload.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Invalid token")
 
         user = db.query(User).filter(User.email == email).first()
         if not user:
@@ -88,16 +98,16 @@ async def confirm_email(token: str, db: db_dep) -> dict:
 
         user.is_verified = True
         db.commit()
-        db.refresh(user)
-
         return {"message": "Email confirmed successfully"}
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
 
 
-@router.post("/logout/")
-async def logout_user(token_data: Token) -> dict:
+@router.post("/logout/", response_model=dict)
+def logout_user(token_data: Token, db: db_dep) -> dict:
     try:
         payload = decode_token(token_data.access_token)
         email = payload.get("email")
@@ -105,9 +115,7 @@ async def logout_user(token_data: Token) -> dict:
         if not email:
             raise HTTPException(status_code=401, detail="Invalid access token")
 
-        return {"message": "Logged out successfully"}
+        return {"message": f"User {email} logged out (client should delete token)."}
 
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail="Invalid access token") from e
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid access token")
