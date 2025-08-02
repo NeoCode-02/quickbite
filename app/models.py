@@ -90,7 +90,6 @@ class Restaurant(Base):
         Index("ix_restaurant_phone", "phone"),
         Index("ix_restaurant_address", "address"),
         Index("ix_restaurant_email", "email"),
-
     )
 
 

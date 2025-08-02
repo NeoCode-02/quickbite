@@ -16,19 +16,21 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    hashed_pw: str
 
 
 class UserUpdate(BaseModel):
     username: str = None
     email: EmailStr | None = None
     phone: str | None = None
-    password: str | None = None
+    hashed_pw: str | None = None
 
 
 class UserResponse(UserBase):
     id: UUID
     role: UserRole
+    is_active: bool
+    is_verified: bool
 
     class Config:
         orm_mode = True

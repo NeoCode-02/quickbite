@@ -3,7 +3,6 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from app.database import Base, DB_URL
-from app.models import User, Restaurant, Item, Order, OrderItem, CourierAssignment
 
 from alembic import context
 
