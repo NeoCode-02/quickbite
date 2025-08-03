@@ -12,6 +12,9 @@ class ItemCreate(ItemBase):
     restaurant_id: UUID
 
 
+class ItemUpdate(ItemBase):
+    pass
+
 class ItemResponse(ItemBase):
     id: UUID
     restaurant_id: UUID

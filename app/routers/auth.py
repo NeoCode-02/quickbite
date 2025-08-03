@@ -1,15 +1,14 @@
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
-from jose import JWTError
+from fastapi import APIRouter, HTTPException
 from app.models import User
 from app.schemas.user import UserCreate
-from app.schemas.auth import UserLogin, Token
+from app.schemas.auth import LoginRequest, Token
 from app.utils import (
     create_access_token,
     create_refresh_token,
     decode_token,
     generate_confirmation_token,
     verify_password,
+    get_password_hash,
 )
 from app.tasks import send_email
 from app.dependencies import db_dep
@@ -18,7 +17,7 @@ from app.settings import FRONTEND_URL
 router = APIRouter()
 
 
-@router.post("/register/", response_model=dict)
+@router.post("/register/")
 def register_user(register_data: UserCreate, db: db_dep):
     existing_user = db.query(User).filter(User.email == register_data.email).first()
     if existing_user:
@@ -34,7 +33,7 @@ def register_user(register_data: UserCreate, db: db_dep):
     user = User(
         username=register_data.username,
         email=register_data.email,
-        hashed_pw=register_data.hashed_pw,
+        hashed_pw=get_password_hash(register_data.hashed_pw),
         is_superuser=is_superuser,
         is_active=True,
         is_verified=is_verified,
@@ -56,7 +55,7 @@ def register_user(register_data: UserCreate, db: db_dep):
 
 
 @router.post("/login/", response_model=Token)
-def login_user(login_data: UserLogin, db: db_dep):
+def login_user(login_data: LoginRequest, db: db_dep):
     user = db.query(User).filter(User.email == login_data.email).first()
 
     if not user or not verify_password(login_data.password, user.hashed_pw):
@@ -66,9 +65,9 @@ def login_user(login_data: UserLogin, db: db_dep):
         raise HTTPException(status_code=403, detail="Account not confirmed")
 
     payload = {
-        "sub": user.email,
+        "sub": user.username,
+        "email": user.email,
         "role": user.role.value,
-        "is_superuser": user.is_superuser,
     }
 
     access_token = create_access_token(data=payload)
